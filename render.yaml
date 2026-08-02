@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: pexo-api
+    env: node
+    rootDir: apps/api
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npx prisma db seed && node dist/main.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pexo-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        value: pexo-secret-jwt-key-2026-production
+      - key: JWT_REFRESH_SECRET
+        value: pexo-refresh-jwt-key-2026-production
+      - key: PORT
+        value: 3000
+
+databases:
+  - name: pexo-db
+    databaseName: pexo
+    user: pexo
+    plan: free
