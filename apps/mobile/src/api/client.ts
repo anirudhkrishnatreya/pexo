@@ -4,7 +4,7 @@ import * as SecureStore from "expo-secure-store"
  * Minimal typed API client with automatic bearer auth and one-shot refresh
  * on 401 (rotating refresh tokens — matches the backend contract).
  */
-const DEFAULT_BASE_URL = "http://localhost:3000/api/v1"
+const DEFAULT_BASE_URL = "https://pexo-api-production.up.railway.app/api/v1"
 
 export const config = {
   baseUrl: process.env.EXPO_PUBLIC_API_URL ?? DEFAULT_BASE_URL,
