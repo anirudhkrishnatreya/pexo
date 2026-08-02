@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: pexo-postgres
+    environment:
+      POSTGRES_USER: pexo
+      POSTGRES_PASSWORD: pexo_dev_password
+      POSTGRES_DB: pexo
+    ports:
+      - "15432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pexo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pexo-redis
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: pexo-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://pexo:pexo_dev_password@postgres:5432/pexo?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: change-me-in-production
+      JWT_REFRESH_SECRET: change-me-too-in-production
+      PORT: 3000
+      NODE_ENV: development
+    ports:
+      - "3005:3000"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main.js"
+
+volumes:
+  pgdata:

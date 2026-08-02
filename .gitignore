@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.expo/
+.env
+*.log
+coverage/
+.DS_Store
+.idea/
+.vscode/
+*.tsbuildinfo
+apps/api/prisma/migrations/dev*

@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Pexo",
+    "slug": "pexo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "pexo",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0B0F1A"
+    },
+    "ios": {
+      "bundleIdentifier": "app.pexo.mobile",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pexo uses your location to record activities and capture territories.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Pexo tracks your route in the background while you record an activity."
+      }
+    },
+    "android": {
+      "package": "app.pexo.mobile",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Pexo tracks your route while recording activities."
+        }
+      ]
+    ]
+  }
+}

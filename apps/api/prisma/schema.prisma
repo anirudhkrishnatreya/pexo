@@ -1,0 +1,424 @@
+// Pexo database schema — PostgreSQL + PostGIS
+// Territory polygons are stored both as GeoJSON (portable) and as a PostGIS
+// geometry column (added via raw SQL migration) for spatial indexing at scale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  PREMIUM
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  UNDISCLOSED
+}
+
+enum ActivityType {
+  RUN
+  WALK
+  RIDE
+  SWIM
+  HIKE
+}
+
+enum ActivityVisibility {
+  PUBLIC
+  FOLLOWERS
+  PRIVATE
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+}
+
+enum TerritoryRarity {
+  COMMON
+  RARE
+  LEGENDARY
+}
+
+enum NotificationType {
+  WORKOUT_COMPLETED
+  FRIEND_ACTIVITY
+  TERRITORY_CAPTURED
+  TERRITORY_LOST
+  CHALLENGE_INVITE
+  EVENT_REMINDER
+  GOAL_COMPLETED
+  BADGE_EARNED
+  KUDOS
+  COMMENT
+  FOLLOW
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  username       String   @unique
+  passwordHash   String?
+  phone          String?  @unique
+  emailVerified  Boolean  @default(false)
+  phoneVerified  Boolean  @default(false)
+  role           Role     @default(USER)
+  banned         Boolean  @default(false)
+
+  displayName    String
+  bio            String?
+  avatarUrl      String?
+  coverUrl       String?
+  gender         Gender   @default(UNDISCLOSED)
+  birthDate      DateTime?
+  heightCm       Float?
+  weightKg       Float?
+
+  fitnessGoal    String?
+  caloriesGoal   Int      @default(2200)
+  proteinGoalG   Int      @default(120)
+  waterGoalMl    Int      @default(2500)
+
+  xp             Int      @default(0)
+  level          Int      @default(1)
+
+  privateProfile Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  activities      Activity[]
+  refreshTokens   RefreshToken[]
+  devices         Device[]
+  followers       Follow[]        @relation("followee")
+  following       Follow[]        @relation("follower")
+  territories     Territory[]     @relation("owner")
+  captures        TerritoryCapture[]
+  foodLogs        FoodLog[]
+  waterLogs       WaterLog[]
+  weightLogs      WeightLog[]
+  kudos           Kudos[]
+  comments        Comment[]
+  notifications   Notification[]
+  badges          UserBadge[]
+  challengeEntries ChallengeParticipant[]
+  sentMessages    Message[]       @relation("sender")
+  auditLogs       AuditLog[]
+
+  @@index([xp])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Device {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform   String   // ios | android
+  model      String?
+  pushToken  String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Follow {
+  followerId String
+  followeeId String
+  follower   User   @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followee   User   @relation("followee", fields: [followeeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([followerId, followeeId])
+  @@index([followeeId])
+}
+
+model Activity {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            ActivityType
+  title           String
+  description     String?
+  visibility      ActivityVisibility @default(PUBLIC)
+
+  startedAt       DateTime
+  endedAt         DateTime
+  elapsedSec      Int
+  movingSec       Int
+  distanceM       Float
+  avgSpeedMps     Float
+  maxSpeedMps     Float
+  elevGainM       Float    @default(0)
+  calories        Int      @default(0)
+  avgHeartRate    Int?
+  maxHeartRate    Int?
+  avgCadence      Int?
+
+  // Encoded polyline for map rendering + raw points for analysis
+  polyline        String?
+  trackPoints     Json     // [{lat,lng,t,ele?,hr?,acc?}]
+  splits          Json?    // [{km, durationSec, paceSecPerKm}]
+
+  // Anti-cheat
+  cheatFlags      Json?    // string[] of triggered heuristics
+  verified        Boolean  @default(true)
+
+  kudos           Kudos[]
+  comments        Comment[]
+  capture         TerritoryCapture?
+
+  createdAt       DateTime @default(now())
+
+  @@index([userId, startedAt])
+  @@index([type])
+}
+
+model Territory {
+  id            String   @id @default(uuid())
+  name          String
+  ownerId       String?
+  owner         User?    @relation("owner", fields: [ownerId], references: [id], onDelete: SetNull)
+  polygon       Json     // GeoJSON Polygon coordinates [[lng,lat],...]
+  centroidLat   Float
+  centroidLng   Float
+  areaSqM       Float
+  perimeterM    Float
+  rarity        TerritoryRarity @default(COMMON)
+  city          String?
+  state         String?
+  country       String?
+  xpValue       Int      @default(0)
+  captureScore  Float    @default(0) // score to beat to steal this territory
+  capturedAt    DateTime?
+  seasonId      String?
+
+  captures      TerritoryCapture[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([centroidLat, centroidLng])
+}
+
+model TerritoryCapture {
+  id           String   @id @default(uuid())
+  territoryId  String
+  territory    Territory @relation(fields: [territoryId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityId   String    @unique
+  activity     Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  activityType ActivityType
+  distanceM    Float
+  durationSec  Int
+  score        Float
+  xpAwarded    Int
+  stolenFromId String?
+  createdAt    DateTime  @default(now())
+
+  @@index([territoryId, createdAt])
+  @@index([userId])
+}
+
+model FoodItem {
+  id          String  @id @default(uuid())
+  name        String
+  brand       String?
+  barcode     String? @unique
+  servingDesc String  @default("100 g")
+  servingG    Float   @default(100)
+  calories    Float
+  proteinG    Float
+  carbsG      Float
+  fatG        Float
+  fiberG      Float   @default(0)
+  sugarG      Float   @default(0)
+  micros      Json?   // {sodiumMg, ironMg, calciumMg, ...}
+  verified    Boolean @default(false)
+
+  logs        FoodLog[]
+
+  @@index([name])
+}
+
+model FoodLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItemId String
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+  meal       MealType
+  servings   Float    @default(1)
+  loggedAt   DateTime @default(now())
+
+  @@index([userId, loggedAt])
+}
+
+model WaterLog {
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountMl Int
+  loggedAt DateTime @default(now())
+
+  @@index([userId, loggedAt])
+}
+
+model WeightLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weightKg  Float
+  bodyFatPct Float?
+  loggedAt  DateTime @default(now())
+
+  @@index([userId, loggedAt])
+}
+
+model Challenge {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  type        ActivityType?
+  metric      String   // distance | duration | elevation | territories
+  targetValue Float
+  startsAt    DateTime
+  endsAt      DateTime
+  badgeId     String?
+
+  participants ChallengeParticipant[]
+
+  createdAt   DateTime @default(now())
+}
+
+model ChallengeParticipant {
+  challengeId String
+  userId      String
+  challenge   Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progress    Float     @default(0)
+  completedAt DateTime?
+  joinedAt    DateTime  @default(now())
+
+  @@id([challengeId, userId])
+  @@index([userId])
+}
+
+model Kudos {
+  userId     String
+  activityId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([userId, activityId])
+  @@index([activityId])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  userId     String
+  activityId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([activityId, createdAt])
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  senderId    String
+  sender      User     @relation("sender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  body        String
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Badge {
+  id          String @id @default(uuid())
+  slug        String @unique
+  name        String
+  description String
+  iconUrl     String?
+  premiumOnly Boolean @default(false)
+
+  users       UserBadge[]
+}
+
+model UserBadge {
+  userId    String
+  badgeId   String
+  user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt  DateTime @default(now())
+
+  @@id([userId, badgeId])
+}
+
+model FeatureFlag {
+  key       String  @id
+  enabled   Boolean @default(false)
+  payload   Json?
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+}
